@@ -40,7 +40,7 @@ class Main(object):
                 lambda event: self.update_slider(event, self.dev) )
 
     def p_set_audio_position(self, position):  # position in nanoseconds
-        self.p.seek_simple(Gst.Format.TIME,
+        self.p.pipeline.seek_simple(Gst.Format.TIME,
             Gst.SeekFlags.FLUSH | Gst.SeekFlags.KEY_UNIT, position)
 
 
@@ -99,15 +99,15 @@ class Dev(Player):
 
         self.slider = builder.get_object("dev_slider")
 
-        self.player = AudioPipe()
-        self.audio = self.player  #.pipeline
+        self.player = AudioPipe(name="preview", device=0)
+        self.audio = self.player.pipeline
 
         self.position = None
 
 
 class Prod(Player):
     def __init__(self, builder):
-        self.audio = AudioPipe()
+        self.audio = AudioPipe(name="speaker", device=1)
 
 
 class Library(object):
@@ -150,66 +150,66 @@ class PlaylistsTree(object):
 
 
 
-class AudioPipe(Gst.Pipeline):
+class AudioPipe(object):
 
-    def __init__(self):
+    def __init__(self, name=None, device=None):
 
         self.playing = False
 
-        self.elements = self.build_pipeline(0)
+        self.build_pipeline(name, device)
 
         # Connecting pipeline signals to methods
         #self.pipeline.connect("message::about-to-finish",  self.on_finished)
 
-        self.pbus = self.get_bus()
-        self.pbus.add_signal_watch()
-        self.pbus.connect('message::eos', self.on_eos)
-        self.pbus.connect('message::error', self.on_error)
+        self.bus = self.pipeline.get_bus()
+        self.bus.add_signal_watch()
+        self.bus.connect('message::eos', self.on_eos)
+        self.bus.connect('message::error', self.on_error)
 
 
-    def build_pipeline(self, device):
+    def build_pipeline(self, name, device):
 
-        e = {}
-        e['filesrc'] = Gst.ElementFactory.make("filesrc", "filesrc")
-        e['decode'] = Gst.ElementFactory.make("decodebin", "decode")
-        e['convert'] = Gst.ElementFactory.make("audioconvert", "convert")
-        e['sink'] = Gst.ElementFactory.make("pulsesink", "sink")
-        e['sink'].set_property("device", device)
+        self.pipeline = Gst.Pipeline()
 
-        self.add(e['filesrc'])
-        self.add(e['decode'])
-        self.add(e['convert'])
-        self.add(e['sink'])
+        self.filesrc = Gst.ElementFactory.make("filesrc", "filesrc")
+        self.decode = Gst.ElementFactory.make("decodebin", "decode")
+        self.convert = Gst.ElementFactory.make("audioconvert", "convert")
+        self.sink = Gst.ElementFactory.make("pulsesink", "sink")
 
-        e['filesrc'].link(e['decode'])
-        e['convert'].link(e['sink'])
+        self.sink.set_property("device", device)
 
-        e['decode'].connect( 'pad-added', lambda d, pad:
-                pad.link(e['convert'].get_static_pad("sink")) )
+        self.pipeline.add(self.filesrc)
+        self.pipeline.add(self.decode)
+        self.pipeline.add(self.convert)
+        self.pipeline.add(self.sink)
 
-        return e
+        self.filesrc.link(self.decode)
+        self.convert.link(self.sink)
+
+        self.decode.connect( 'pad-added', lambda d, pad:
+                pad.link(self.convert.get_static_pad("sink")) )
 
     def load_media_file(self, filepath):
-        self.set_state(Gst.State.READY)
-        self.elements['filesrc'].set_property('location', filepath)
+        self.pipeline.set_state(Gst.State.READY)
+        self.filesrc.set_property('location', filepath)
         self.playing = False
 
     def play(self):
         """ """
-        self.set_state(Gst.State.PLAYING)
+        self.pipeline.set_state(Gst.State.PLAYING)
         self.playing = True
 
     def pause(self):
         """ """
-        self.set_state(Gst.State.PAUSED)
+        self.pipeline.set_state(Gst.State.PAUSED)
         self.playing = False
 
     def get_state(self):
         """"""
-        return self.get_state.value_name
+        return self.pipeline.get_state.value_name
 
     def on_eos(self):
-        self.set_state(Gst.State.READY)
+        self.pipeline.set_state(Gst.State.READY)
         self.playing = False
 
     def on_error(self):
