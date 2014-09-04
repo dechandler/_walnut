@@ -8,219 +8,238 @@ from gi.repository import Gtk, Gst, GObject
 GObject.threads_init()
 Gst.init(None)
 
+from player import Player
 
-class Main(object):
+ONE_BILLION = 1000000000
+
+class Main(Gtk.Window):
     def __init__(self):
 
-        self.builder = Gtk.Builder()
-        self.builder.add_from_file("1.glade")
-        self.window = self.builder.get_object("window")
-        self.dev = Dev( self.builder )
-        self.prod = Prod( self.builder )
+        super(Main, self).__init__()
 
-        self.handlers = {
-            "onDeleteWindow": Gtk.main_quit,
-            "dev_next": self.dev.next,
-            #"dev_play_pause": self.dev.player.play_pause,
-        }
-        self.builder.connect_signals(self.handlers)
+        #paned = Gtk.Paned.new(Gtk.Orientation.HORIZONTAL)
 
-    def p_next(self, button):
-        song = self.library.selection.next()
-        self.p.load_media_file(song)
-        self.p.play()
+        self.speaker_out = Prod()
+        print "things"
+        self.add(self.speaker_out)
+        print "stuff"
 
-    def p_play_pause(self, button):
-        """Preview play/pause toggle handler"""
-        if self.p.get_state() == "GST_STATE_PLAYING":
-            self.p.pause()
+        #self.panes = Gtk.Paned.new(Gtk.Orientation.HORIZONTAL)
+
+        # add the first image to the left pane
+        #paned.add1(image1)
+        # add the second image to the right pane
+        #paned.add2(speaker_out)
+
+        # add the panes to the window
+        #self.add(paned)
+
+
+class Prod(Gtk.Box):
+    def __init__(self):
+
+        super(Prod, self).__init__(orientation=Gtk.Orientation.VERTICAL)
+
+        self.player = Player(device=0)
+
+        self.controls = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+
+        # play/pause toggle
+        #self.btn_play_pause = Gtk.ToggleButton(label="P/P")
+        #self.btn_play_pause.connect("toggled", self.play_pause_toggle, "2")
+        #self.controls.pack_start(self.btn_play_pause, False, False, 2)
+
+        # play button
+        self.btn_play = Gtk.Button(label="Play")
+        self.controls.pack_start(self.btn_play, False, False, 2)
+
+        # pause button
+        self.btn_pause = Gtk.Button(label="Pause")
+        self.controls.pack_start(self.btn_pause, False, False, 2)
+
+        # stop button
+        self.btn_stop = Gtk.Button(label="Stop")
+        self.controls.pack_start(self.btn_stop, False, False, 2)
+
+        # the time display
+        self.time = Gtk.Label("0:00 | 0:00 | 0:00")
+        self.controls.pack_start(self.time, True, True, 5)
+
+        # output lock toggle
+        self.btn_lock = Gtk.ToggleButton(label="Lock")
+        self.btn_lock.connect("toggled", self.lock_toggle, "2")
+        self.controls.pack_end(self.btn_lock, False, False, 2)
+
+        #self.controls.set_homogeneous(True)
+        self.pack_start(self.controls, False, False, 2)
+
+
+
+        self.info = Gtk.Label("Herp Derp")
+        self.info.set_alignment(0, 0)
+        self.pack_start(self.info, False, False, 5)
+
+        self.slider = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL)
+        self.slider.set_draw_value(False)
+        self.slider.set_range(0, 100)
+        #self.slider.set_increments(1, 10)
+        self.pack_start(self.slider, False, True, 5)
+
+        def play_song(x):
+            self.player.load_media_file("/home/david/usr/dropbox/Coding/walnut/1.mp3")
+            self.play()
+
+        self.btn_play_song = Gtk.Button(label="Play Song")
+        self.btn_play_song.connect("clicked", play_song)
+        self.pack_start(self.btn_play_song, False, False, 2)
+
+        self.playlist = Playlist()
+        #self.playlist = Gtk.Label(label="Playlist Placeholder")
+        self.pack_start(self.playlist, True, True, 0)
+
+        self.locked = False
+        self.c = [1, 2, 3, 4]
+        self.unlock_buttons()
+
+    def unlock_buttons(self):
+
+        if self.c:
+            c = self.c
+            self.btn_play.disconnect(c[0])
+            self.btn_pause.disconnect(c[1])
+            self.btn_stop.disconnect(c[2])
+            self.slider.disconnect(c[3])
         else:
-            self.p.play()
-            GObject.timeout_add( 1000,
-                lambda event: self.update_slider(event, self.dev) )
+            c = []
 
-    def p_set_audio_position(self, position):  # position in nanoseconds
-        self.p.pipeline.seek_simple(Gst.Format.TIME,
-            Gst.SeekFlags.FLUSH | Gst.SeekFlags.KEY_UNIT, position)
+        c[0] = self.btn_play.connect("clicked", lambda x: self.play())
+        c[1] = self.btn_pause.connect("clicked", lambda x: self.player.pause())
+        c[2] = self.btn_stop.connect("clicked", lambda x: self.stop())
+        c[3] = self.slider.connect("change-value", self.slider_set_position)
+        self.c = c
 
+    def lock_buttons(self):
 
+        if self.c:
+            c = self.c
+            self.btn_play.disconnect(c[0])
+            self.btn_pause.disconnect(c[1])
+            self.btn_stop.disconnect(c[2])
+            self.slider.disconnect(c[3])
+        else:
+            c = []
 
+        c[0] = self.btn_play.connect("clicked", lambda x: self.lock_deny())
+        c[1] = self.btn_pause.connect("clicked", lambda x: self.lock_deny())
+        c[2] = self.btn_stop.connect("clicked", lambda x: self.lock_deny())
+        c[3] = self.slider.connect("change-value", lambda a,b,c: self.lock_deny())
+        self.c = c
 
+    def lock_deny(self):
 
-class Player(object):
-    def __init__(self):
         pass
 
-    def update_position(self, event, pane):
+    def update_position(self):
 
-        if pane.player.playing == False:
+        if self.player.playing == False:
            return False # cancel timeout
 
-        position_ns = pane.audio.query_position(Gst.Format.TIME)[1]
-        position_s = int(position_ns) / Gst.SECOND
-
-        duration_ns = pane.audio.query_duration(Gst.Format.TIME)[1]
-        duration_s = int(duration_ns) / Gst.SECOND
-
+        position_ns, duration_ns = self.player.get_position()
+        position_s = int(position_ns) / ONE_BILLION
+        duration_s = int(duration_ns) / ONE_BILLION
         remaining_s = duration_s - position_s
 
-           # block seek handler so we don't seek when we set_value()
-           # self.slider.handler_block_by_func(self.on_slider_change)
 
-        #duration = float(duration_nanosecs) / Gst.SECOND
-        #position = float(nanosecs) / Gst.SECOND
+        #block seek handler so we don't seek when we set_value()
+        #self.slider.handler_block_by_func(self.slider_set_position)
 
-        pane.slider.set_range(0, duration_ns)
-        pane.slider.set_value(position_ns)
+        self.slider.set_range(0, duration_ns)
+        self.slider.set_value(position_ns)
 
-        pane.time.set_text(" ".join([
-            "{}:{:02}".format(remaining_s/60, remaining_s%60),
+        self.time.set_text(" | ".join([
+            "{}:{:02}".format(position_s/60, position_s%60),
             "{}:{:02}".format(duration_s/60, duration_s%60),
-            "{}:{:02}".format(position_s/60, position_s%60)
+            "{}:{:02}".format(remaining_s/60, remaining_s%60)
         ]))
 
-           #self.slider.handler_unblock_by_func(self.on_slider_change)
+        #self.slider.handler_unblock_by_func(self.slider_set_position)
 
         return True
 
-    def next(self):
-        song = self.get_next()
-        self.player.load_media_file(song)
-        self.player.play()
-
-
-
-
-class Dev(Player):
-    def __init__(self, builder):
-        self.play_pause = builder.get_object("dev_play_pause")
-        self.song_info = builder.get_object("dev_song_info")
-        self.time = builder.get_object("dev_time")
-
-        self.slider = builder.get_object("dev_slider")
-
-        self.player = AudioPipe(name="preview", device=0)
-        self.audio = self.player.pipeline
-
-        self.position = None
-
-
-class Prod(Player):
-    def __init__(self, builder):
-        self.audio = AudioPipe(name="speaker", device=1)
-
-
-class Library(object):
-    """
-    This will be the object that holds lists of songs
-    Maybe have Playlist as a subclass
-    """
-    def __init__(self):
-        self.list = [
-            "/home/david/usr/dropbox/Coding/djx/1.mp3",
-            "/home/david/Dropbox/dl-music/ZZ Ward - Til the Casket Drops - 04 - Home.mp3",
-            "/home/david/Dropbox/dl-music/ZZ Ward - Til the Casket Drops - 05 - Cryin Wolf (feat. Kendrick Lamar).mp3",
-            "/home/david/Dropbox/dl-music/ZZ Ward - Til the Casket Drops - 13 - 365 Days.mp3",
-            "/home/david/Dropbox/dl-music/ZZ Ward - Til the Casket Drops - 11 - If I Could Be Her.mp3"
-        ]
-
-        self.selection = self.derp()
-
-    def derp(self):
-        for song in self.list:
-            yield song
-
-
-class Playlist(object):
-    def __init__(self):
-        self.list = [
-            # list of filepaths
-        ]
-
-        self.playing_index = 0
-        self.playing = self.list[self.playing_index]
-
-    def set_next(self):
-        pass
-
-
-class PlaylistsTree(object):
-    def __init__(self):
-        pass
-
-
-
-class AudioPipe(object):
-
-    def __init__(self, name=None, device=None):
-
-        self.playing = False
-
-        self.build_pipeline(name, device)
-
-        # Connecting pipeline signals to methods
-        #self.pipeline.connect("message::about-to-finish",  self.on_finished)
-
-        self.bus = self.pipeline.get_bus()
-        self.bus.add_signal_watch()
-        self.bus.connect('message::eos', self.on_eos)
-        self.bus.connect('message::error', self.on_error)
-
-
-    def build_pipeline(self, name, device):
-
-        self.pipeline = Gst.Pipeline()
-
-        self.filesrc = Gst.ElementFactory.make("filesrc", "filesrc")
-        self.decode = Gst.ElementFactory.make("decodebin", "decode")
-        self.convert = Gst.ElementFactory.make("audioconvert", "convert")
-        self.sink = Gst.ElementFactory.make("pulsesink", "sink")
-
-        self.sink.set_property("device", device)
-
-        self.pipeline.add(self.filesrc)
-        self.pipeline.add(self.decode)
-        self.pipeline.add(self.convert)
-        self.pipeline.add(self.sink)
-
-        self.filesrc.link(self.decode)
-        self.convert.link(self.sink)
-
-        self.decode.connect( 'pad-added', lambda d, pad:
-                pad.link(self.convert.get_static_pad("sink")) )
-
-    def load_media_file(self, filepath):
-        self.pipeline.set_state(Gst.State.READY)
-        self.filesrc.set_property('location', filepath)
-        self.playing = False
+    def slider_set_position(self, a, b, value):
+        self.slider.set_value(value)
+        self.player.seek(value)
+        #self.update_position()
 
     def play(self):
-        """ """
-        self.pipeline.set_state(Gst.State.PLAYING)
-        self.playing = True
+        GObject.timeout_add(500, self.update_position)
+        self.player.playing = True
+        self.player.play()
 
-    def pause(self):
-        """ """
-        self.pipeline.set_state(Gst.State.PAUSED)
-        self.playing = False
+    def stop(self):
+        self.slider.set_value(0)
+        self.time.set_text("0:00 | 0:00 | 0:00")
+        self.player.playing = False
+        self.player.stop()
 
-    def get_state(self):
-        """"""
-        return self.pipeline.get_state.value_name
+    def lock_toggle(self, button, name):
+        if button.get_active() == True:
+            self.lock_buttons()
+            self.locked = True
+        else:
+            self.unlock_buttons()
+            self.locked = False
 
-    def on_eos(self):
-        self.pipeline.set_state(Gst.State.READY)
-        self.playing = False
+class Playlist(Gtk.TreeView):
+    def __init__(self):
 
-    def on_error(self):
-        pass
+        self.store = Gtk.ListStore(str, str, str, str)
+        super(Playlist, self).__init__(self.store)
 
-    def on_finished(self):
-        pass
+        ui = {}
+
+        selection = self.get_selection()
+        #selection.set_mode(Gtk.SELECTION_SINGLE)
+        selection.connect("changed", self._on_selection_changed, ui)
+        selection.connect("row-activated", self.)
+
+        self.columns = ['Title', 'Artist']
+
+        dummy_store_data = [ {
+            'artist': "edIT", 'title': "Certified Air Raid Material",
+            'length': "366", 'path': "/home/david/walnut/1.mp3"
+        },{
+            'artist': "ABBA", 'title': "Waterloo",
+            'length': "162", 'path': "/home/david/walnut/2.mp3"
+        } ]
+
+
+        for entry in dummy_store_data:
+            self.store.append([entry['artist'], entry['title'], entry['length'], entry['path']])
+
+        renderer = Gtk.CellRendererText()
+
+        column = Gtk.TreeViewColumn("Artist", renderer, text=0)
+        self.append_column(column)
+        column = Gtk.TreeViewColumn("Title", renderer, text=1)
+        self.append_column(column)
+        column = Gtk.TreeViewColumn("Length", renderer, text=2)
+        self.append_column(column)
+
+    def _on_selection_changed(self,selection, data=None):
+        treeview = selection.get_tree_view()
+        (model, iter) = selection.get_selected()
+        #data['button_top'].set_sensitive(iter is not None)
+        #data['button_up'].set_sensitive(iter is not None)
+        #data['button_down'].set_sensitive(iter is not None)
+        #data['button_last'].set_sensitive(iter is not None)
+        #data['button_edit'].set_sensitive(iter is not None)
+        #
+          2data['button_delete'].set_sensitive(iter is not None)
 
 
 if __name__ == "__main__":
     win = Main()
-    win.window.connect("delete-event", Gtk.main_quit)
-    win.window.show_all()
+    win.connect("delete-event", Gtk.main_quit)
+    win.show_all()
     Gtk.main()

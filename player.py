@@ -21,8 +21,18 @@ class Player(object):
         #self.audio.connect("message::about-to-finish",  self.on_finished)
         self.bus.connect('message::eos', self._on_eos)
         self.bus.connect('message::error', self._on_error)
+        self.bus.connect('message::tag', self._on_message_tag)
 
         self.playing = False
+
+
+    def _on_message_tag (self, bus, message):
+        #we received a tag message
+        taglist = message.parse_tag()
+        #put the keys in the dictionary
+        for key in taglist.keys():
+            self.file_tags[key] = taglist[key]
+
 
     def build_pipeline(self, device):
         """
@@ -91,10 +101,10 @@ class Player(object):
         if self.playing:
             self.audio.set_state(Gst.State.PLAYING)
 
-    def _on_eos(self):
+    def _on_eos(self, x, y):
         self.stop()
 
-    def _on_error(self):
+    def _on_error(self, x, y):
         self.stop()
 
     def _on_finished(self):
