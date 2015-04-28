@@ -3,6 +3,8 @@
 
 import time
 import gi
+import logging
+import sqlite3
 gi.require_version('Gst', '1.0')
 from gi.repository import Gtk, Gst, GObject
 GObject.threads_init()
@@ -11,6 +13,8 @@ Gst.init(None)
 from player import Player
 
 ONE_BILLION = 1000000000
+
+null_log = logging.getLogger("null")
 
 class Main(Gtk.Window):
     def __init__(self):
@@ -74,7 +78,6 @@ class Prod(Gtk.Box):
         self.pack_start(self.controls, False, False, 2)
 
 
-
         self.info = Gtk.Label("Herp Derp")
         self.info.set_alignment(0, 0)
         self.pack_start(self.info, False, False, 5)
@@ -85,16 +88,11 @@ class Prod(Gtk.Box):
         #self.slider.set_increments(1, 10)
         self.pack_start(self.slider, False, True, 5)
 
-        def play_song(x):
-            self.player.load_media_file("/home/david/usr/dropbox/Coding/walnut/1.mp3")
-            self.play()
-
         self.btn_play_song = Gtk.Button(label="Play Song")
-        self.btn_play_song.connect("clicked", play_song)
+        self.btn_play_song.connect("clicked", self.play_song)
         self.pack_start(self.btn_play_song, False, False, 2)
 
-        self.playlist = Playlist()
-        #self.playlist = Gtk.Label(label="Playlist Placeholder")
+        self.playlist = Playlist("main", "/home/david/walnut/gb.db")
         self.pack_start(self.playlist, True, True, 0)
 
         self.locked = False
@@ -190,43 +188,94 @@ class Prod(Gtk.Box):
             self.unlock_buttons()
             self.locked = False
 
+    def play_song(x):
+        self.player.load_media_file("/home/david/usr/dropbox/Coding/walnut/1.mp3")
+        self.play()
+
 class Playlist(Gtk.TreeView):
-    def __init__(self):
 
-        self.store = Gtk.ListStore(str, str, str, str)
+    def __init__(self, name, db_file, conf={}, db_log=null_log, log=null_log):
+
+        self.conf = {
+            'sort_key': "index",
+            'sort_order': "desc",
+            'hidden': False,
+            'headers': ['artist', 'title', 'duration']
+        }
+        self.conf.update(conf)
+
+        self.columns = ['playlist_index', 'file_path', 'artist', 'title',
+                        'genre', 'duration', 'bpm', 'comments', 'rating',
+                        'year']
+        self.initialize_db(name, db_file)
+
+        self.store = Gtk.ListStore(*[str for c in self.columns])
         super(Playlist, self).__init__(self.store)
-
-        ui = {}
 
         selection = self.get_selection()
         #selection.set_mode(Gtk.SELECTION_SINGLE)
-        selection.connect("changed", self._on_selection_changed, ui)
-        selection.connect("row-activated", self.)
+        #ui = {}
+        #selection.connect("changed", self._on_selection_changed, ui)
+        #selection.connect("row-activated", self.)
 
-        self.columns = ['Title', 'Artist']
+        self.load_playlist()
 
-        dummy_store_data = [ {
-            'artist': "edIT", 'title': "Certified Air Raid Material",
-            'length': "366", 'path': "/home/david/walnut/1.mp3"
-        },{
-            'artist': "ABBA", 'title': "Waterloo",
-            'length': "162", 'path': "/home/david/walnut/2.mp3"
-        } ]
+        if not self.conf['hidden']:
+            self.render()
+
+    def initialize_db(self, name, db_file):
+        self.conn = sqlite3.connect(db_file)
+        self.c = self.conn.cursor()
+        self.db_table = "playlist__{}".format(name)
+        db_columns = ", ".join(["{} text".format(c) for c in self.columns])
+
+        # Need to escape db_table
+        sql = '''CREATE TABLE IF NOT EXISTS {} ({})'''.format(
+                                                    self.db_table, db_columns)
+        print(sql)
+        #self.c.execute(sql, (self.db_table,))
+        self.c.execute(sql)
+        self.conn.commit()
 
 
-        for entry in dummy_store_data:
-            self.store.append([entry['artist'], entry['title'], entry['length'], entry['path']])
+    def load_playlist(self):
 
-        renderer = Gtk.CellRendererText()
+        self.store.clear()
+        sql = '''SELECT * FROM {}'''.format(self.db_table)
+        for i in self.c.execute(sql):
+            print(i)
+            self.store.append(i)
 
-        column = Gtk.TreeViewColumn("Artist", renderer, text=0)
-        self.append_column(column)
-        column = Gtk.TreeViewColumn("Title", renderer, text=1)
-        self.append_column(column)
-        column = Gtk.TreeViewColumn("Length", renderer, text=2)
-        self.append_column(column)
+    def render(self):
 
-    def _on_selection_changed(self,selection, data=None):
+        for header in self.conf['headers']:
+            renderer = Gtk.CellRendererText()  # may need to be in loop
+            index = self.columns.index(header)
+            print(header, index)
+            column = Gtk.TreeViewColumn(header.title(), renderer, text=index)
+            column.set_sort_column_id(index)
+            self.append_column(column)
+
+    def playlist_view(self):
+        pass
+        """
+        cur.execute('''SELECT * FROM playlist''')
+        itemlist = cur.fetchall()
+        store = gtk.ListStore(*coltypes)
+        for act in itemlist:
+            store.append(act)
+
+        Now create columns for the TreeView (let's say it's called 'tree'):
+
+        for index, item in enumerate(colnames):
+            rendererText = gtk.CellRendererText()
+            column = gtk.TreeViewColumn(item, rendererText, text=index)
+            column.set_sort_column_id(index)
+            tree.append_column(column)
+        """
+
+
+    def _on_selection_changed(self, selection, data=None):
         treeview = selection.get_tree_view()
         (model, iter) = selection.get_selected()
         #data['button_top'].set_sensitive(iter is not None)
@@ -235,7 +284,7 @@ class Playlist(Gtk.TreeView):
         #data['button_last'].set_sensitive(iter is not None)
         #data['button_edit'].set_sensitive(iter is not None)
         #
-          2data['button_delete'].set_sensitive(iter is not None)
+        #data['button_delete'].set_sensitive(iter is not None)
 
 
 if __name__ == "__main__":
